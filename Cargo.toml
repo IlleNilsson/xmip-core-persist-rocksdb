@@ -1,25 +1,35 @@
 # Its own workspace root, so this repository builds on its own.
-#
-# Every module repository carries this and the template did not, which stopped
-# mattering the moment the template stopped sitting beside the estate: nested at
-# template/rust, cargo walked up, found the root workspace and refused to build.
-#
-# It would have bitten a generated repository the same way. A template that does
-# not obey the estate's rules produces repositories that start out breaking
-# them — doc/governance/rust-style.md section 4.
 [workspace]
 
 [package]
-name = "xmip-template-rust"
+name = "xmip-core-persist-rocksdb"
 version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/IlleNilsson/xmip-template-rust"
-description = "Starter template for a Rust Xmip module repository."
+repository = "https://github.com/IlleNilsson/xmip-core-persist-rocksdb"
+description = "The runtime store: RocksDB holding persist's sealed records. A xmip-core-persist technology."
 publish = false
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+# A Technology depends on its parent, never the reverse (repository-model.md).
+# The Engine trait, the error and the encryption above it live there; this
+# crate only keeps bytes under bytes.
+persist = { package = "xmip-core-persist", git = "https://github.com/IlleNilsson/xmip-core-persist", branch = "main" }
+# The engine the owner chose for the runtime store (ADR-0015, amendment
+# 2026-09-25). C++, compiled by the crate's build script with the platform's
+# C++ compiler, and bound through bindgen, which needs libclang at build time
+# (prerequisite.toml, cpp). No compression: every value is ciphertext, which
+# does not compress, and each codec is a C library more to build.
+rocksdb = { version = "0.25", default-features = false, features = ["bindgen-runtime"] }
+
+[dev-dependencies]
+# The checks every engine passes, run from persist's `fixture` module, sealing
+# under a key-encryption key held in memory rather than the machine's own key
+# store; the feature is enabled here so it is never part of a production build.
+persist = { package = "xmip-core-persist", git = "https://github.com/IlleNilsson/xmip-core-persist", branch = "main", features = ["test-support"] }
 
 [lints.rust]
 # forbid, not deny: a module has no business writing unsafe. The one exception
