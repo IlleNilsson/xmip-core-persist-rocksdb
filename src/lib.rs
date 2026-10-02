@@ -11,12 +11,16 @@
 //! clause 2).
 //!
 //! Every write is synced before it returns, so a record a caller was told
-//! is written survives the machine stopping. A directory is opened by one
+//! is written survives the machine stopping. A batch is one `WriteBatch`,
+//! all of it or none, under one sync; and writers in several threads that
+//! sync at once share one sync of the write-ahead log, `RocksDB`'s own
+//! group commit (`deployment-model.md` section 7: *group commit shares one
+//! sync among concurrent writes*). A directory is opened by one
 //! process at a time, which `RocksDB`'s lock file enforces; within it,
 //! [`persist::Engine::write_new`] is one step under a lock of its own.
 
-use persist::{Engine, PersistError};
-use rocksdb::{DB, DBCompressionType, Options, WriteOptions};
+use persist::{Change, Engine, PersistError};
+use rocksdb::{DB, DBCompressionType, Options, WriteBatch, WriteOptions};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -100,6 +104,17 @@ impl Engine for RocksDb {
 
     fn remove(&self, key: &[u8]) -> Result<(), PersistError> {
         self.db.delete_opt(key, &synced()).map_err(failed)
+    }
+
+    fn apply(&self, batch: &[Change]) -> Result<(), PersistError> {
+        let mut written = WriteBatch::default();
+        for (key, value) in batch {
+            match value {
+                Some(value) => written.put(key, value),
+                None => written.delete(key),
+            }
+        }
+        self.db.write_opt(written, &synced()).map_err(failed)
     }
 }
 
