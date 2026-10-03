@@ -11,7 +11,10 @@
 //! clause 2).
 //!
 //! Every write is synced before it returns, so a record a caller was told
-//! is written survives the machine stopping. A batch is one `WriteBatch`,
+//! is written survives the machine stopping — except a deferred one
+//! ([`persist::Engine::apply_deferred`]), which goes into the write-ahead
+//! log unsynced and is synced with the next synced write: how a Stream's
+//! chunks wait for their Publication's one sync. A batch is one `WriteBatch`,
 //! all of it or none, under one sync; and writers in several threads that
 //! sync at once share one sync of the write-ahead log, `RocksDB`'s own
 //! group commit (`deployment-model.md` section 7: *group commit shares one
@@ -70,6 +73,18 @@ fn failed(error: rocksdb::Error) -> PersistError {
     PersistError::engine(ENGINE, error)
 }
 
+/// `batch` as one `RocksDB` write.
+fn batched(batch: &[Change]) -> WriteBatch {
+    let mut written = WriteBatch::default();
+    for (key, value) in batch {
+        match value {
+            Some(value) => written.put(key, value),
+            None => written.delete(key),
+        }
+    }
+    written
+}
+
 /// Writes that are on disk when they return.
 fn synced() -> WriteOptions {
     let mut options = WriteOptions::default();
@@ -107,14 +122,15 @@ impl Engine for RocksDb {
     }
 
     fn apply(&self, batch: &[Change]) -> Result<(), PersistError> {
-        let mut written = WriteBatch::default();
-        for (key, value) in batch {
-            match value {
-                Some(value) => written.put(key, value),
-                None => written.delete(key),
-            }
-        }
-        self.db.write_opt(written, &synced()).map_err(failed)
+        self.db.write_opt(batched(batch), &synced()).map_err(failed)
+    }
+
+    /// Into the write-ahead log, unsynced: the next synced write syncs the
+    /// log, and with it this.
+    fn apply_deferred(&self, batch: &[Change]) -> Result<(), PersistError> {
+        self.db
+            .write_opt(batched(batch), &WriteOptions::default())
+            .map_err(failed)
     }
 }
 
@@ -142,6 +158,22 @@ mod tests {
             db
         };
         conformance(open, || everything_in(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_deferred_write_is_there_with_the_synced_write_after_it() {
+        let dir = directory("deferred");
+        let db = RocksDb::open(&dir).expect("open");
+        db.apply_deferred(&[(b"chunk".to_vec(), Some(b"bytes".to_vec()))])
+            .expect("written");
+        assert_eq!(db.read(b"chunk").expect("read"), Some(b"bytes".to_vec()));
+        db.apply(&[(b"message".to_vec(), Some(b"record".to_vec()))])
+            .expect("synced");
+        drop(db);
+        let again = RocksDb::open(&dir).expect("open again");
+        assert_eq!(again.read(b"chunk").expect("read"), Some(b"bytes".to_vec()));
+        drop(again);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
