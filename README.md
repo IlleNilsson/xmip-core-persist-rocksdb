@@ -5,15 +5,17 @@ technology of [xmip-core-persist](https://github.com/IlleNilsson/xmip-core-persi
 
 `RocksDb::open(directory)` is a `persist::Engine`, and
 `persist::EncryptedStore::open(RocksDb::open(dir)?, &keys, &kek)` is the
-runtime store. It keeps what the layer hands it — a keyed hash as the key, a
-sealed record as the value — and encrypts nothing itself; RocksDB's own
-encryption hook is not used (ADR-0063 clause 2).
+runtime store. It keeps what the layer hands it — a keyed hash, or an index
+entry's sortable key, as the key, a sealed record as the value — and encrypts
+nothing itself; RocksDB's own encryption hook is not used (ADR-0063 clause 2).
 
 - Every write is synced before it returns.
 - No compression: every value is ciphertext, which does not compress, and each
   codec is one more C library to build.
 - A directory is opened by one process at a time, as RocksDB's lock file
   enforces; `write_new` is one step under a lock of its own within it.
+- `scan` reads a range of keys, either way, as one iterator: how an index
+  entry is found (`persist::EncryptedStore::scan_index`).
 - `flush` writes the memory table to its files for a clean close; what is
   written is durable in the write-ahead log either way.
 
@@ -28,8 +30,10 @@ Windows build takes some twenty minutes; later builds reuse it.
 
 `persist::fixture::conformance` over a real database directory, on Windows
 and on the AlmaLinux guest: a record back after the database is closed and
-reopened, neither the record's key, its kind nor its value anywhere in the
-directory's files (write-ahead log and tables alike), a tampered record
-refused with its scope, the store refused under another key of the same
-name; and a directory opened twice is refused. The workflow is manual-only
-and calls the versioned shared workflow at `IlleNilsson/.github@v1`.
+reopened, index entries found by a value within a time, oldest or newest
+first, neither the record's key, its kind, its value, an indexed value nor
+the record an entry finds anywhere in the directory's files (write-ahead log
+and tables alike), a tampered record refused with its scope, the store
+refused under another key of the same name; and a directory opened twice is
+refused. The workflow is manual-only and calls the versioned shared workflow
+at `IlleNilsson/.github@v1`.

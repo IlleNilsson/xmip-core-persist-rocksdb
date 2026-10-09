@@ -5,10 +5,11 @@
 //! Messages, Journeys and checkpoints are written constantly and read by
 //! key, which is what a log-structured engine is built for. [`RocksDb`] is a
 //! [`persist::Engine`]: it keeps the bytes [`persist::EncryptedStore`] hands
-//! it — a keyed hash as the key, a sealed record as the value — and knows
-//! nothing of either. It encrypts nothing itself, and `RocksDB`'s own
-//! encryption hook is not used: the layer above is the one way (ADR-0063
-//! clause 2).
+//! it — a keyed hash, or an index entry's sortable key, as the key, a sealed
+//! record as the value — and knows nothing of either; a range of keys is one
+//! iterator ([`persist::Engine::scan`]). It encrypts nothing itself, and
+//! `RocksDB`'s own encryption hook is not used: the layer above is the one
+//! way (ADR-0063 clause 2).
 //!
 //! Every write is synced before it returns, so a record a caller was told
 //! is written survives the machine stopping — except a deferred one
@@ -22,8 +23,8 @@
 //! process at a time, which `RocksDB`'s lock file enforces; within it,
 //! [`persist::Engine::write_new`] is one step under a lock of its own.
 
-use persist::{Change, Engine, PersistError};
-use rocksdb::{DB, DBCompressionType, Options, WriteBatch, WriteOptions};
+use persist::{Change, Engine, Entry, PersistError};
+use rocksdb::{DB, DBCompressionType, Direction, IteratorMode, Options, WriteBatch, WriteOptions};
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -131,6 +132,32 @@ impl Engine for RocksDb {
         self.db
             .write_opt(batched(batch), &WriteOptions::default())
             .map_err(failed)
+    }
+
+    /// One iterator from one end of the range, stopped at the other or at
+    /// `most`: a range in a log-structured engine is a seek and a walk.
+    fn scan(
+        &self,
+        first: &[u8],
+        last: &[u8],
+        most: usize,
+        reverse: bool,
+    ) -> Result<Vec<Entry>, PersistError> {
+        let (from, direction) = if reverse {
+            (last, Direction::Reverse)
+        } else {
+            (first, Direction::Forward)
+        };
+        let mut entries = Vec::new();
+        for entry in self.db.iterator(IteratorMode::From(from, direction)) {
+            let (key, value) = entry.map_err(failed)?;
+            let past = if reverse { &*key < first } else { &*key > last };
+            if past || entries.len() == most {
+                break;
+            }
+            entries.push((key.into_vec(), value.into_vec()));
+        }
+        Ok(entries)
     }
 }
 
