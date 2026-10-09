@@ -31,9 +31,8 @@ Windows build takes some twenty minutes; later builds reuse it.
 `persist::fixture::conformance` over a real database directory, on Windows
 and on the AlmaLinux guest: a record back after the database is closed and
 reopened, index entries found by a value within a time, oldest or newest
-first, neither the record's key, its kind, its value, an indexed value nor
-the record an entry finds anywhere in the directory's files (write-ahead log
-and tables alike), a tampered record refused with its scope, the store
+first, their values in the clear in the files, and neither the record's key,
+its kind nor its value anywhere in them (write-ahead log and tables alike), a tampered record refused with its scope, the store
 refused under another key of the same name; and a directory opened twice is
 refused. The workflow is manual-only and calls the versioned shared workflow
 at `IlleNilsson/.github@v1`.
