@@ -15,7 +15,13 @@
 //! is written survives the machine stopping — except a deferred one
 //! ([`persist::Engine::apply_deferred`]), which goes into the write-ahead
 //! log unsynced and is synced with the next synced write: how a Stream's
-//! chunks wait for their Publication's one sync. A batch is one `WriteBatch`,
+//! chunks wait for their Publication's one sync. The log is written to its
+//! file only by a sync (`RocksDB`'s `manual_wal_flush`): a deferred write
+//! is kept in `RocksDB`'s own buffer of the log until then, so it never
+//! waits on a sync another thread runs — on Windows a write to a file
+//! waits while that file is flushed, and a Stream's chunks waited out the
+//! previous Message's sync (ADR-0018, amendment 2026-10-20) — and a write
+//! not yet synced goes with the process. A batch is one `WriteBatch`,
 //! all of it or none, under one sync; and writers in several threads that
 //! sync at once share one sync of the write-ahead log, `RocksDB`'s own
 //! group commit (`deployment-model.md` section 7: *group commit shares one
@@ -51,6 +57,9 @@ impl RocksDb {
         options.create_if_missing(true);
         // Ciphertext does not compress; trying costs time for nothing.
         options.set_compression_type(DBCompressionType::None);
+        // The log written to its file by a sync alone: a write never waits
+        // on another thread's sync of it.
+        options.set_manual_wal_flush(true);
         let db = DB::open(&options, directory).map_err(failed)?;
         Ok(Self {
             db,
@@ -126,8 +135,8 @@ impl Engine for RocksDb {
         self.db.write_opt(batched(batch), &synced()).map_err(failed)
     }
 
-    /// Into the write-ahead log, unsynced: the next synced write syncs the
-    /// log, and with it this.
+    /// Into the write-ahead log's buffer, unsynced: the next synced write
+    /// writes the log and syncs it, and with it this.
     fn apply_deferred(&self, batch: &[Change]) -> Result<(), PersistError> {
         self.db
             .write_opt(batched(batch), &WriteOptions::default())
