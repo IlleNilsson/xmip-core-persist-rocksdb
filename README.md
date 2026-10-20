@@ -9,7 +9,10 @@ runtime store. It keeps what the layer hands it — a keyed hash, or an index
 entry's sortable key, as the key, a sealed record as the value — and encrypts
 nothing itself; RocksDB's own encryption hook is not used (ADR-0063 clause 2).
 
-- Every write is synced before it returns.
+- Every write is synced before it returns, but a deferred one, which waits
+  in RocksDB's own buffer of the write-ahead log for the next sync to write
+  and sync it (`manual_wal_flush`): it never waits on another thread's sync
+  of the log, and goes with the process until synced.
 - No compression: every value is ciphertext, which does not compress, and each
   codec is one more C library to build.
 - A directory is opened by one process at a time, as RocksDB's lock file
