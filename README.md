@@ -23,8 +23,11 @@ nothing itself; RocksDB's own encryption hook is not used (ADR-0063 clause 2).
 
 RocksDB is C++. The `rocksdb` crate compiles it with the platform's C++
 compiler and binds it through bindgen, which loads libclang while it builds:
-`prerequisite.toml` declares both (`libclang`, and `cxx` on Linux). The first
-Windows build takes some twenty minutes; later builds reuse it.
+`prerequisite.toml` declares both (`libclang`, and `cxx` on Linux). Cloned
+alone, the first Windows build compiles it, some twenty minutes, and later
+builds reuse it. Under the estate root every build links the one library the
+root's `.cargo/config.toml` names instead, compiled once per RocksDB version
+by `Install-XmipPrerequisite -Install`.
 
 ## Verification
 
