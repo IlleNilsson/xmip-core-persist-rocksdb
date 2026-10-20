@@ -134,6 +134,12 @@ impl Engine for RocksDb {
             .map_err(failed)
     }
 
+    /// The write-ahead log synced: every write before now durable, the
+    /// deferred among them.
+    fn sync(&self) -> Result<(), PersistError> {
+        self.db.flush_wal(true).map_err(failed)
+    }
+
     /// One iterator from one end of the range, stopped at the other or at
     /// `most`: a range in a log-structured engine is a seek and a walk.
     fn scan(
