@@ -18,7 +18,13 @@ nothing itself; RocksDB's own encryption hook is not used (ADR-0063 clause 2).
 - A directory is opened by one process at a time, as RocksDB's lock file
   enforces; `write_new` is one step under a lock of its own within it.
 - `scan` reads a range of keys, either way, as one iterator: how an index
-  entry is found (`persist::EncryptedStore::scan_index`).
+  entry is found (`persist::EncryptedStore::scan_index`). The iterator is
+  bounded at both ends, so it never steps past the range over keys taken
+  out beyond it: a key taken out is a mark `RocksDB` passes, about 85 ns
+  each, until a compaction drops it (measured 2026-10-21, the test
+  `a_range_from_its_first_kept_key_steps_over_no_key_taken_out`). A read
+  of what is due starts where a queue's first due entry is for the same
+  reason (`persist`'s `storage/due.rs`).
 - `flush` writes the memory table to its files for a clean close; what is
   written is durable in the write-ahead log either way.
 
