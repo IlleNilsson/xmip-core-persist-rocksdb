@@ -29,9 +29,10 @@
 //! process at a time, which `RocksDB`'s lock file enforces; within it,
 //! [`persist::Engine::write_new`] is one step under a lock of its own.
 
-use persist::{Change, Engine, Entry, PersistError};
+use persist::{Change, Engine, Entry, PersistError, Reads};
 use rocksdb::{
-    DB, DBCompressionType, Direction, IteratorMode, Options, ReadOptions, WriteBatch, WriteOptions,
+    DB, DBCompressionType, Direction, Error, IteratorMode, Options, ReadOptions,
+    SnapshotWithThreadMode, WriteBatch, WriteOptions,
 };
 use std::path::Path;
 use std::sync::Mutex;
@@ -160,31 +161,71 @@ impl Engine for RocksDb {
         most: usize,
         reverse: bool,
     ) -> Result<Vec<Entry>, PersistError> {
-        let (from, direction) = if reverse {
-            (last, Direction::Reverse)
-        } else {
-            (first, Direction::Forward)
-        };
-        // Bounded at both ends, so the walk never steps past the range over
-        // what was taken out beyond it: a key taken out is a mark the
-        // iterator passes until a compaction drops it (2026-10-21).
-        let mut bounds = ReadOptions::default();
-        bounds.set_iterate_lower_bound(first.to_vec());
-        bounds.set_iterate_upper_bound([last, &[0]].concat());
-        let mut entries = Vec::new();
-        for entry in self
-            .db
-            .iterator_opt(IteratorMode::From(from, direction), bounds)
-        {
-            let (key, value) = entry.map_err(failed)?;
-            let past = if reverse { &*key < first } else { &*key > last };
-            if past || entries.len() == most {
-                break;
-            }
-            entries.push((key.into_vec(), value.into_vec()));
-        }
-        Ok(entries)
+        walked((first, last), most, reverse, |mode, bounds| {
+            self.db.iterator_opt(mode, bounds)
+        })
     }
+
+    /// A snapshot: every read through it sees the database as it stood.
+    fn view(&self) -> Result<Box<dyn Reads + '_>, PersistError> {
+        Ok(Box::new(Snapshot(self.db.snapshot())))
+    }
+}
+
+/// One `RocksDB` snapshot.
+struct Snapshot<'a>(SnapshotWithThreadMode<'a, DB>);
+
+impl Reads for Snapshot<'_> {
+    fn read(&self, key: &[u8]) -> Result<Option<Vec<u8>>, PersistError> {
+        self.0.get(key).map_err(failed)
+    }
+
+    fn scan(
+        &self,
+        first: &[u8],
+        last: &[u8],
+        most: usize,
+        reverse: bool,
+    ) -> Result<Vec<Entry>, PersistError> {
+        walked((first, last), most, reverse, |mode, bounds| {
+            self.0.iterator_opt(mode, bounds)
+        })
+    }
+}
+
+/// The range from `first` to `last`, both included, up to `most`, in order
+/// or the reverse: one iterator `iterate` opens from one end, stopped at
+/// the other or at `most`.
+fn walked<I>(
+    (first, last): (&[u8], &[u8]),
+    most: usize,
+    reverse: bool,
+    iterate: impl FnOnce(IteratorMode<'_>, ReadOptions) -> I,
+) -> Result<Vec<Entry>, PersistError>
+where
+    I: Iterator<Item = Result<(Box<[u8]>, Box<[u8]>), Error>>,
+{
+    let (from, direction) = if reverse {
+        (last, Direction::Reverse)
+    } else {
+        (first, Direction::Forward)
+    };
+    // Bounded at both ends, so the walk never steps past the range over
+    // what was taken out beyond it: a key taken out is a mark the
+    // iterator passes until a compaction drops it (2026-10-21).
+    let mut bounds = ReadOptions::default();
+    bounds.set_iterate_lower_bound(first.to_vec());
+    bounds.set_iterate_upper_bound([last, &[0]].concat());
+    let mut entries = Vec::new();
+    for entry in iterate(IteratorMode::From(from, direction), bounds) {
+        let (key, value) = entry.map_err(failed)?;
+        let past = if reverse { &*key < first } else { &*key > last };
+        if past || entries.len() == most {
+            break;
+        }
+        entries.push((key.into_vec(), value.into_vec()));
+    }
+    Ok(entries)
 }
 
 #[cfg(test)]
