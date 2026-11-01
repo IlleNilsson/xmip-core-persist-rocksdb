@@ -31,7 +31,7 @@
 
 use persist::{Change, Engine, Entry, PersistError, Reads};
 use rocksdb::{
-    DB, DBCompressionType, Direction, Error, IteratorMode, Options, ReadOptions,
+    BlockBasedOptions, DB, DBCompressionType, Direction, Error, IteratorMode, Options, ReadOptions,
     SnapshotWithThreadMode, WriteBatch, WriteOptions,
 };
 use std::path::Path;
@@ -39,6 +39,13 @@ use std::sync::Mutex;
 
 /// What a failure's scope names this engine.
 const ENGINE: &str = "rocksdb";
+
+/// The share of the memory table's size its Bloom filter takes.
+const MEMTABLE_BLOOM: f64 = 0.1;
+
+/// A table file's Bloom filter, bits a key: about one key in a hundred
+/// that is not there is searched for anyway.
+const BLOOM_BITS: f64 = 10.0;
 
 /// A `RocksDB` database in one directory.
 pub struct RocksDb {
@@ -63,6 +70,16 @@ impl RocksDb {
         // The log written to its file by a sync alone: a write never waits
         // on another thread's sync of it.
         options.set_manual_wal_flush(true);
+        // A key that is not there is told by a Bloom filter over whole
+        // keys, in the memory table and in every table file, before any of
+        // either is searched: most of a Publication's reads ask for a
+        // record that is new (open problem 33, 2026-11-01).
+        options.set_memtable_prefix_bloom_ratio(MEMTABLE_BLOOM);
+        options.set_memtable_whole_key_filtering(true);
+        let mut tables = BlockBasedOptions::default();
+        tables.set_bloom_filter(BLOOM_BITS, false);
+        tables.set_whole_key_filtering(true);
+        options.set_block_based_table_factory(&tables);
         let db = DB::open(&options, directory).map_err(failed)?;
         Ok(Self {
             db,

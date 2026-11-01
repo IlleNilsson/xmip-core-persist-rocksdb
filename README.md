@@ -15,6 +15,9 @@ nothing itself; RocksDB's own encryption hook is not used (ADR-0063 clause 2).
   of the log, and goes with the process until synced.
 - No compression: every value is ciphertext, which does not compress, and each
   codec is one more C library to build.
+- A Bloom filter over whole keys in the memory table and in every table
+  file: a read of a key that is not there, most of a Publication's reads,
+  searches neither (open problem 33, 2026-11-01).
 - A directory is opened by one process at a time, as RocksDB's lock file
   enforces; `write_new` is one step under a lock of its own within it.
 - `scan` reads a range of keys, either way, as one iterator: how an index
