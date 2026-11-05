@@ -21,7 +21,7 @@ persist = { package = "xmip-core-persist", git = "https://github.com/IlleNilsson
 # The engine the owner chose for the runtime store (ADR-0015, amendment
 # 2026-09-25). C++, compiled by the crate's build script with the platform's
 # C++ compiler, and bound through bindgen, which needs libclang at build time
-# (prerequisite.toml, cpp). No compression: every value is ciphertext, which
+# (prerequisite.xmip, cpp). No compression: every value is ciphertext, which
 # does not compress, and each codec is a C library more to build.
 rocksdb = { version = "0.25", default-features = false, features = ["bindgen-runtime"] }
 
