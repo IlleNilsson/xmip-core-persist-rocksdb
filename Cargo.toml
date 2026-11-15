@@ -38,6 +38,8 @@ test = false
 # under a key-encryption key held in memory rather than the machine's own key
 # store; the feature is enabled here so it is never part of a production build.
 persist = { package = "xmip-core-persist", git = "https://github.com/IlleNilsson/xmip-core-persist", branch = "main", features = ["test-support"] }
+# The timing program's fastest of five (`xcore::latency::at_once`). Test-only.
+xcore = { package = "xmip-core", git = "https://github.com/IlleNilsson/xmip-core", branch = "main", features = ["test-support"] }
 
 [lints.rust]
 # forbid, not deny: a module has no business writing unsafe. The one exception
