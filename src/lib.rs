@@ -248,16 +248,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use file::temporary::Folder;
     use persist::fixture::{conformance, everything_in};
-    use std::path::PathBuf;
 
-    fn directory(test: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "xmip-persist-rocksdb-{test}-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&path);
-        path
+    fn directory(test: &str) -> Folder {
+        Folder::new(&format!("persist-rocksdb-{test}"))
     }
 
     #[test]
@@ -269,7 +264,6 @@ mod tests {
             db
         };
         conformance(open, || everything_in(&dir));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -285,7 +279,6 @@ mod tests {
         let again = RocksDb::open(&dir).expect("open again");
         assert_eq!(again.read(b"chunk").expect("read"), Some(b"bytes".to_vec()));
         drop(again);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -297,6 +290,5 @@ mod tests {
             Err(PersistError::Engine { .. })
         ));
         drop(first);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

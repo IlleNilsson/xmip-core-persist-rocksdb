@@ -9,21 +9,12 @@
 //!   answer from what is held, the fastest of five
 //!   (`xcore::latency::at_once`).
 
-use std::path::PathBuf;
 use std::time::Duration;
 
+use file::temporary::Folder;
 use persist::{Change, Engine};
 use xcore::latency::at_once;
 use xmip_core_persist_rocksdb::RocksDb;
-
-fn directory(test: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "xmip-persist-rocksdb-measured-{test}-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&path);
-    path
-}
 
 /// A scan from `first` to `last`, said under `what`, finding `found`: the
 /// fastest of five (`xcore::latency::at_once`); until 2026-11-15 a copy of
@@ -44,7 +35,7 @@ fn scanned(what: &str, db: &RocksDb, (first, last): (&[u8], &[u8]), found: usize
 /// none, in the memory table and once flushed (2026-10-21).
 #[test]
 fn a_range_from_its_first_kept_key_steps_over_no_key_taken_out() {
-    let dir = directory("tombstones");
+    let dir = Folder::new("persist-rocksdb-measured-tombstones");
     let db = RocksDb::open(&dir).expect("open");
     let key = |n: u64| [b"due".as_slice(), &n.to_be_bytes()].concat();
     let removed = 100_000u64;
@@ -82,5 +73,4 @@ fn a_range_from_its_first_kept_key_steps_over_no_key_taken_out() {
         db.flush().expect("flushed");
     }
     drop(db);
-    let _ = std::fs::remove_dir_all(&dir);
 }
