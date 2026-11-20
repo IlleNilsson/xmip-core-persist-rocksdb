@@ -29,7 +29,7 @@
 //! process at a time, which `RocksDB`'s lock file enforces; within it,
 //! [`persist::Engine::write_new`] is one step under a lock of its own.
 
-use persist::{Change, Engine, Entry, PersistError, Reads};
+use persist::{BorrowedChange, Engine, Entry, PersistError, Reads};
 use rocksdb::{
     BlockBasedOptions, DB, DBCompressionType, Direction, Error, IteratorMode, Options, ReadOptions,
     SnapshotWithThreadMode, WriteBatch, WriteOptions,
@@ -104,7 +104,7 @@ fn failed(error: rocksdb::Error) -> PersistError {
 }
 
 /// `batch` as one `RocksDB` write.
-fn batched(batch: &[Change]) -> WriteBatch {
+fn batched(batch: &[BorrowedChange<'_>]) -> WriteBatch {
     let mut written = WriteBatch::default();
     for (key, value) in batch {
         match value {
@@ -151,13 +151,13 @@ impl Engine for RocksDb {
         self.db.delete_opt(key, &synced()).map_err(failed)
     }
 
-    fn apply(&self, batch: &[Change]) -> Result<(), PersistError> {
+    fn apply(&self, batch: &[BorrowedChange<'_>]) -> Result<(), PersistError> {
         self.db.write_opt(batched(batch), &synced()).map_err(failed)
     }
 
     /// Into the write-ahead log's buffer, unsynced: the next synced write
     /// writes the log and syncs it, and with it this.
-    fn apply_deferred(&self, batch: &[Change]) -> Result<(), PersistError> {
+    fn apply_deferred(&self, batch: &[BorrowedChange<'_>]) -> Result<(), PersistError> {
         self.db
             .write_opt(batched(batch), &WriteOptions::default())
             .map_err(failed)
@@ -270,11 +270,10 @@ mod tests {
     fn a_deferred_write_is_there_with_the_synced_write_after_it() {
         let dir = directory("deferred");
         let db = RocksDb::open(&dir).expect("open");
-        db.apply_deferred(&[(b"chunk".to_vec(), Some(b"bytes".to_vec()))])
+        db.apply_deferred(&[(b"chunk", Some(b"bytes"))])
             .expect("written");
         assert_eq!(db.read(b"chunk").expect("read"), Some(b"bytes".to_vec()));
-        db.apply(&[(b"message".to_vec(), Some(b"record".to_vec()))])
-            .expect("synced");
+        db.apply(&[(b"message", Some(b"record"))]).expect("synced");
         drop(db);
         let again = RocksDb::open(&dir).expect("open again");
         assert_eq!(again.read(b"chunk").expect("read"), Some(b"bytes".to_vec()));
