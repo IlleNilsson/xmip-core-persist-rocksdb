@@ -14,7 +14,7 @@ path = "src/lib.rs"
 # A Technology depends on its parent, never the reverse (repository-model.md).
 # The Engine trait, the error and the encryption above it live there; this
 # crate only keeps bytes under bytes.
-persist = { package = "xmip-core-persist", git = "https://github.com/IlleNilsson/xmip-core-persist", branch = "main" }
+persist = { workspace = true }
 # The engine the owner chose for the runtime store (ADR-0015, amendment
 # 2026-09-25). C++, compiled by the crate's build script with the platform's
 # C++ compiler, and bound through bindgen, which needs libclang at build time
@@ -34,11 +34,11 @@ test = false
 # The checks every engine passes, run from persist's `fixture` module, sealing
 # under a key-encryption key held in memory rather than the machine's own key
 # store; the feature is enabled here so it is never part of a production build.
-persist = { package = "xmip-core-persist", git = "https://github.com/IlleNilsson/xmip-core-persist", branch = "main", features = ["test-support"] }
+persist = { workspace = true, features = ["test-support"] }
 # The timing program's fastest of five (`xcore::latency::at_once`). Test-only.
-xcore = { package = "xmip-core", git = "https://github.com/IlleNilsson/xmip-core", branch = "main", features = ["test-support"] }
+xcore = { workspace = true, features = ["test-support"] }
 # A test's own temporary folder (`file::temporary`); for the tests only.
-file = { package = "xmip-core-library-file", git = "https://github.com/IlleNilsson/xmip-core-library-file", branch = "main", features = ["test-support"] }
+file = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true
